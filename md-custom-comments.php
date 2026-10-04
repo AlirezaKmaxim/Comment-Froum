@@ -3,7 +3,7 @@
  * Plugin Name: MD Custom Comments (مدیریت نظرات سفارشی)
  * Plugin URI:  https://github.com/hosein/md-custom-comments
  * Description: سیستم هوشمند و زیبای ثبت نظرات با امتیازدهی ستاره‌ای، انتخاب آواتار سفارشی و اطلاع‌رسانی پیام‌رسان‌ها
- * Version:     1.1.0
+ * Version:     1.1.1
  * Author:      Hosein
  * License:     GPL-2.0+
  * Text Domain: md-custom-comments
@@ -13,7 +13,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // تعریف ثوابت اصلی افزونه
-define( 'MD_CUSTOM_COMMENTS_VERSION', '1.1.0' );
+define( 'MD_CUSTOM_COMMENTS_VERSION', '1.1.1' );
 define( 'MD_CUSTOM_COMMENTS_FILE', __FILE__ );
 define( 'MD_CUSTOM_COMMENTS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'MD_CUSTOM_COMMENTS_URL', plugin_dir_url( __FILE__ ) );

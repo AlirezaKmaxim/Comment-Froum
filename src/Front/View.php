@@ -5,6 +5,25 @@ defined( 'ABSPATH' ) || exit;
 
 class View {
     /**
+     * تعداد نظرات اصلی که در بار اول (و در هر بار کلیک «نمایش بیشتر») بارگذاری می‌شود.
+     * برای جلوگیری از رندر یک‌جای صدها دیدگاه در HTML اولیه صفحه (Lazy Load).
+     */
+    const COMMENTS_PER_PAGE = 10;
+
+    /**
+     * کش تنظیمات افزونه در طول یک درخواست، تا به‌جای فراخوانی مکرر get_option()
+     * به ازای هر دیدگاه/پاسخ/آواتار، فقط یک‌بار در طول Request خوانده شود.
+     */
+    private static $settings_cache = null;
+
+    private function get_settings() {
+        if ( self::$settings_cache === null ) {
+            self::$settings_cache = get_option( 'md_comments_settings', [] );
+        }
+        return self::$settings_cache;
+    }
+
+    /**
      * رندر کامل فرانت‌اند شامل فرم و لیست نظرات
      */
     public function render() {
@@ -20,18 +39,20 @@ class View {
             $post_id = 0;
         }
 
-        // بازیابی نظرات و آمار مربوطه از دیتابیس
+        // بازیابی نظرات و آمار مربوطه از دیتابیس — فقط اولین صفحه (Lazy Load)
         $repository = new \MDCustomComments\Database\CommentRepository();
-        $comments = $repository->get_approved_comments( $post_id );
+        $comments = $repository->get_approved_comments( $post_id, 1, self::COMMENTS_PER_PAGE );
         $comments_count = $repository->get_comments_count( $post_id );
         $users_count = $repository->get_unique_users_count( $post_id );
+        $top_level_count = $repository->get_top_level_comments_count( $post_id );
+        $has_more_comments = $top_level_count > self::COMMENTS_PER_PAGE;
 
         // تبدیل اعداد به یونیکد فارسی برای نمایش زیباتر
         $comments_count_fa = $this->to_persian_num( $comments_count );
         $users_count_fa = $this->to_persian_num( $users_count );
 
         // لود تنطیمات عمومی
-        $settings = get_option( 'md_comments_settings', [] );
+        $settings = $this->get_settings();
         $title_name = isset( $settings['title_name'] ) && ! empty( $settings['title_name'] ) ? $settings['title_name'] : 'نام و نام خانوادگی';
         $title_phone = isset( $settings['title_phone'] ) && ! empty( $settings['title_phone'] ) ? $settings['title_phone'] : 'شماره همراه (برای اطلاع‌رسانی)';
         $label_admin = isset( $settings['label_admin'] ) && ! empty( $settings['label_admin'] ) ? $settings['label_admin'] : 'کارشناس پشتیبانی';
@@ -194,6 +215,17 @@ class View {
           <div class="flex flex-col gap-6 transition-all duration-300" id="commentsList">
             <?php echo $this->render_comments_list_html( $comments ); ?>
           </div>
+
+          <?php if ( $has_more_comments ) : ?>
+          <!-- دکمه نمایش دیدگاه‌های بیشتر (Lazy Load) -->
+          <div class="text-center mt-6">
+            <button type="button" id="loadMoreCommentsBtn"
+                    class="inline-flex items-center justify-center gap-2 bg-white border-2 border-border text-primary font-bold text-sm rounded-full py-2.5 px-8 cursor-pointer hover:border-gold hover:text-gold transition-all"
+                    data-next-page="2">
+              نمایش دیدگاه‌های بیشتر
+            </button>
+          </div>
+          <?php endif; ?>
         </div>
         </div> <!-- Close md-custom-comments-scope -->
         <?php
@@ -204,80 +236,21 @@ class View {
      * رندر تصویر یا ساختار آواتار بر اساس شناسه انتخابی و نقش کاربر
      */
     private function get_avatar_html( $avatar_id, $user_id = 0, $class = 'w-14 h-14' ) {
-        $settings = get_option( 'md_comments_settings', [] );
-
-        // ۱. بررسی آواتار عضو یا ادمین
-        if ( $user_id > 0 ) {
-            $user = get_userdata( $user_id );
-            if ( $user && in_array( 'administrator', (array) $user->roles ) ) {
-                $admin_avatar_id = isset( $settings['avatar_admin_id'] ) ? intval( $settings['avatar_admin_id'] ) : 0;
-                if ( $admin_avatar_id ) {
-                    $img_url = wp_get_attachment_url( $admin_avatar_id );
-                    if ( $img_url ) {
-                        return '<img class="' . esc_attr( $class ) . ' object-cover rounded-full" src="' . esc_url( $img_url ) . '" alt="ادمین" />';
-                    }
-                }
-            } else {
-                $member_avatar_id = isset( $settings['avatar_member_id'] ) ? intval( $settings['avatar_member_id'] ) : 0;
-                if ( $member_avatar_id ) {
-                    $img_url = wp_get_attachment_url( $member_avatar_id );
-                    if ( $img_url ) {
-                        return '<img class="' . esc_attr( $class ) . ' object-cover rounded-full" src="' . esc_url( $img_url ) . '" alt="عضو سایت" />';
-                    }
-                }
-            }
-        }
-
-        // ۲. بررسی آواتارهای ۴گانه کاربر
-        $option_key = 'avatar_user_' . intval( $avatar_id ) . '_id';
-        $custom_avatar_id = isset( $settings[$option_key] ) ? intval( $settings[$option_key] ) : 0;
-        if ( $custom_avatar_id ) {
-            $img_url = wp_get_attachment_url( $custom_avatar_id );
-            if ( $img_url ) {
-                return '<img class="' . esc_attr( $class ) . ' object-cover rounded-full" src="' . esc_url( $img_url ) . '" alt="آواتار" />';
-            }
-        }
-
-        // ۳. در غیر این صورت، بازگشت به آواتارهای پیش‌فرض SVG
-        switch ( intval( $avatar_id ) ) {
-            case 2:
-                return '<svg class="' . esc_attr( $class ) . '" viewBox="0 0 40 40"><rect x="8" y="6" width="24" height="24" rx="6" fill="#009c8f" opacity="0.6"/><circle cx="20" cy="18" r="5" fill="#fff" opacity="0.8"/></svg>';
-            case 3:
-                return '<svg class="' . esc_attr( $class ) . '" viewBox="0 0 40 40"><polygon points="20,4 36,30 4,30" fill="#0c2d28" opacity="0.5"/><circle cx="20" cy="21" r="4" fill="#fff" opacity="0.7"/></svg>';
-            case 4:
-                return '<svg class="' . esc_attr( $class ) . '" viewBox="0 0 40 40"><circle cx="20" cy="20" r="14" fill="#c39854" opacity="0.3"/><circle cx="14" cy="17" r="2.5" fill="#c39854" opacity="0.7"/><circle cx="26" cy="17" r="2.5" fill="#c39854" opacity="0.7"/><path d="M14 25 Q20 30 26 25" stroke="#c39854" stroke-width="1.5" fill="none" opacity="0.6"/></svg>';
-            case 1:
-            default:
-                return '<svg class="' . esc_attr( $class ) . '" viewBox="0 0 40 40"><circle cx="20" cy="15" r="8" fill="#c39854" opacity="0.7"/><ellipse cx="20" cy="35" rx="14" ry="10" fill="#c39854" opacity="0.4"/></svg>';
-        }
+        return \MDCustomComments\Support\AvatarRenderer::render( $avatar_id, $user_id, $class, $this->get_settings(), 'front' );
     }
 
     /**
      * تبدیل اعداد انگلیسی به فارسی
      */
     private function to_persian_num( $num ) {
-        $persian_digits = [ '۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹' ];
-        return str_replace( range( 0, 9 ), $persian_digits, $num );
+        return \MDCustomComments\Support\PersianFormatter::to_persian_num( $num );
     }
 
     /**
      * نمایش تاریخ به صورت زمان گذشته (مانند "۲ ساعت پیش")
      */
     private function human_time_diff_fa( $datetime ) {
-        $diff = time() - strtotime( $datetime );
-        if ( $diff < 60 ) {
-            return 'لحظاتی پیش';
-        }
-        $diff_minutes = round( $diff / 60 );
-        if ( $diff_minutes < 60 ) {
-            return $this->to_persian_num( $diff_minutes ) . ' دقیقه پیش';
-        }
-        $diff_hours = round( $diff / 3600 );
-        if ( $diff_hours < 24 ) {
-            return $this->to_persian_num( $diff_hours ) . ' ساعت پیش';
-        }
-        $diff_days = round( $diff / 86400 );
-        return $this->to_persian_num( $diff_days ) . ' روز پیش';
+        return \MDCustomComments\Support\PersianFormatter::human_time_diff_fa( $datetime );
     }
 
     /**
@@ -318,7 +291,7 @@ class View {
             'dislikes'     => 0,
         ] );
 
-        $settings = get_option( 'md_comments_settings', [] );
+        $settings = $this->get_settings();
         $badge_admin = isset( $settings['badge_admin'] ) && ! empty( $settings['badge_admin'] ) ? $settings['badge_admin'] : 'ادمین';
         $badge_member = isset( $settings['badge_member'] ) && ! empty( $settings['badge_member'] ) ? $settings['badge_member'] : 'عضو سایت';
 
@@ -403,7 +376,7 @@ class View {
             'dislikes'     => 0,
         ] );
 
-        $settings = get_option( 'md_comments_settings', [] );
+        $settings = $this->get_settings();
         $label_admin = isset( $settings['label_admin'] ) && ! empty( $settings['label_admin'] ) ? $settings['label_admin'] : 'کارشناس پشتیبانی';
         $badge_admin = isset( $settings['badge_admin'] ) && ! empty( $settings['badge_admin'] ) ? $settings['badge_admin'] : 'ادمین';
 

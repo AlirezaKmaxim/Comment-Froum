@@ -47,33 +47,65 @@ class CommentRepository {
     }
 
     /**
-     * بازیابی نظرات تایید شده مربوط به یک نوشته
+     * بازیابی یک صفحه از نظرات اصلی تایید شده یک نوشته به‌همراه پاسخ‌هایشان (Lazy Load)
+     *
+     * برای جلوگیری از N+1 Query، پاسخ‌های همان دسته از نظرات اصلیِ بازگردانده‌شده
+     * در یک کوئری واحد (WHERE parent_id IN (...)) گرفته می‌شوند؛ نه یک کوئری به ازای هر نظر.
      */
-    public function get_approved_comments( $post_id ) {
+    public function get_approved_comments( $post_id, $page = 1, $per_page = 10 ) {
         global $wpdb;
 
-        // دریافت نظرات اصلی
-        $query = $wpdb->prepare(
-            "SELECT * FROM {$this->table_name} WHERE post_id = %d AND status = 'approved' AND parent_id = 0 ORDER BY created_at DESC",
-            $post_id
-        );
-        $comments = $wpdb->get_results( $query, ARRAY_A );
+        $page = max( 1, intval( $page ) );
+        $per_page = max( 1, min( 50, intval( $per_page ) ) );
+        $offset = ( $page - 1 ) * $per_page;
 
-        if ( ! is_array( $comments ) ) {
+        // ۱. یک صفحه از نظرات اصلی (جدیدترین اول)
+        $top_query = $wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE post_id = %d AND status = 'approved' AND parent_id = 0 ORDER BY created_at DESC LIMIT %d OFFSET %d",
+            $post_id,
+            $per_page,
+            $offset
+        );
+        $top_level = $wpdb->get_results( $top_query, ARRAY_A );
+
+        if ( ! is_array( $top_level ) || empty( $top_level ) ) {
             return [];
         }
 
-        // دریافت پاسخ‌ها برای هر نظر
-        foreach ( $comments as &$comment ) {
-            $reply_query = $wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE parent_id = %d AND status = 'approved' ORDER BY created_at ASC",
-                $comment['id']
-            );
-            $replies = $wpdb->get_results( $reply_query, ARRAY_A );
-            $comment['replies'] = is_array( $replies ) ? $replies : [];
+        // ۲. پاسخ‌های همین دسته از نظرات اصلی، در یک کوئری واحد
+        $ids = wp_list_pluck( $top_level, 'id' );
+        $placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+        $reply_query = $wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE parent_id IN ({$placeholders}) AND status = 'approved' ORDER BY created_at ASC",
+            $ids
+        );
+        $replies = $wpdb->get_results( $reply_query, ARRAY_A );
+
+        $replies_by_parent = [];
+        if ( is_array( $replies ) ) {
+            foreach ( $replies as $reply ) {
+                $replies_by_parent[ intval( $reply['parent_id'] ) ][] = $reply;
+            }
         }
 
-        return $comments;
+        foreach ( $top_level as &$comment ) {
+            $comment['replies'] = isset( $replies_by_parent[ $comment['id'] ] ) ? $replies_by_parent[ $comment['id'] ] : [];
+        }
+        unset( $comment );
+
+        return $top_level;
+    }
+
+    /**
+     * تعداد کل نظرات اصلی تایید شده یک پست (بدون احتساب پاسخ‌ها) — برای تصمیم‌گیری «نمایش بیشتر»
+     */
+    public function get_top_level_comments_count( $post_id ) {
+        global $wpdb;
+        $query = $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$this->table_name} WHERE post_id = %d AND status = 'approved' AND parent_id = 0",
+            $post_id
+        );
+        return intval( $wpdb->get_var( $query ) );
     }
 
     /**
@@ -108,15 +140,37 @@ class CommentRepository {
         return $phone_count + $name_count;
     }
     /**
-     * بازیابی تمام نظرات برای پنل ادمین
+     * بازیابی نظرات برای پنل ادمین به‌صورت صفحه‌بندی‌شده (جلوگیری از بازگرداندن کل جدول یک‌جا)
+     *
+     * @return array{items: array, total: int, page: int, per_page: int, total_pages: int}
      */
-    public function get_all_comments_for_admin() {
+    public function get_all_comments_for_admin( $page = 1, $per_page = 20 ) {
         global $wpdb;
-        $query = "SELECT c.*, p.post_title 
-                  FROM {$this->table_name} c 
-                  LEFT JOIN {$wpdb->posts} p ON c.post_id = p.ID 
-                  ORDER BY c.created_at DESC";
-        return $wpdb->get_results( $query, ARRAY_A );
+
+        $page = max( 1, intval( $page ) );
+        $per_page = max( 1, min( 100, intval( $per_page ) ) );
+        $offset = ( $page - 1 ) * $per_page;
+
+        $total = intval( $wpdb->get_var( "SELECT COUNT(*) FROM {$this->table_name}" ) );
+
+        $query = $wpdb->prepare(
+            "SELECT c.*, p.post_title
+             FROM {$this->table_name} c
+             LEFT JOIN {$wpdb->posts} p ON c.post_id = p.ID
+             ORDER BY c.created_at DESC
+             LIMIT %d OFFSET %d",
+            $per_page,
+            $offset
+        );
+        $items = $wpdb->get_results( $query, ARRAY_A );
+
+        return [
+            'items'       => is_array( $items ) ? $items : [],
+            'total'       => $total,
+            'page'        => $page,
+            'per_page'    => $per_page,
+            'total_pages' => $per_page > 0 ? (int) ceil( $total / $per_page ) : 0,
+        ];
     }
 
     /**
@@ -188,24 +242,24 @@ class CommentRepository {
 
         // ۱. دریافت اطلاعات کاربر و IP
         $user_id = get_current_user_id();
+
+        // واکنش (لایک/دیسلایک) فقط برای کاربران لاگین‌شده مجاز است؛ همین محدودیت در
+        // Front\Controller::handle_reaction() و در front.js هم اعمال شده. این چک در
+        // این‌جا هم برای دفاع در عمق (defense in depth) تکرار می‌شود.
+        if ( $user_id <= 0 ) {
+            return false;
+        }
+
         $ip_address = \MDCustomComments\Security\Validator::get_ip_address();
 
         $reactions_table = $wpdb->prefix . 'md_comment_reactions';
 
-        // ۲. بررسی وجود عکس‌العمل قبلی
-        if ( $user_id > 0 ) {
-            $existing = $wpdb->get_row( $wpdb->prepare(
-                "SELECT * FROM {$reactions_table} WHERE comment_id = %d AND user_id = %d",
-                $comment_id,
-                $user_id
-            ), ARRAY_A );
-        } else {
-            $existing = $wpdb->get_row( $wpdb->prepare(
-                "SELECT * FROM {$reactions_table} WHERE comment_id = %d AND user_id = 0 AND ip_address = %s",
-                $comment_id,
-                $ip_address
-            ), ARRAY_A );
-        }
+        // ۲. بررسی وجود عکس‌العمل قبلی همین کاربر روی این دیدگاه
+        $existing = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$reactions_table} WHERE comment_id = %d AND user_id = %d",
+            $comment_id,
+            $user_id
+        ), ARRAY_A );
 
         if ( $existing ) {
             $old_type = $existing['reaction_type'];
@@ -250,7 +304,7 @@ class CommentRepository {
             }
         } else {
             // ج) ثبت واکنش جدید
-            $wpdb->insert(
+            $inserted = $wpdb->insert(
                 $reactions_table,
                 [
                     'comment_id'    => $comment_id,
@@ -261,13 +315,26 @@ class CommentRepository {
                 [ '%d', '%d', '%s', '%s' ]
             );
 
-            $column = ( $type === 'like' ) ? 'likes' : 'dislikes';
-            $wpdb->query( $wpdb->prepare(
-                "UPDATE {$this->table_name} SET {$column} = {$column} + 1 WHERE id = %d",
-                $comment_id
-            ) );
+            if ( $inserted ) {
+                $column = ( $type === 'like' ) ? 'likes' : 'dislikes';
+                $wpdb->query( $wpdb->prepare(
+                    "UPDATE {$this->table_name} SET {$column} = {$column} + 1 WHERE id = %d",
+                    $comment_id
+                ) );
 
-            $user_reaction = $type;
+                $user_reaction = $type;
+            } else {
+                // درج ناموفق بود؛ محتمل‌ترین دلیل برخورد با قید یکتایی (comment_user) در اثر
+                // یک درخواست هم‌زمان دیگر از همین کاربر است. برای جلوگیری از عدم تطابق شمارنده
+                // با تعداد واقعی ردیف‌های reactions، شمارنده را تغییر نمی‌دهیم و وضعیت واقعیِ
+                // فعلی را که همان درخواست هم‌زمان ثبت کرده از دیتابیس می‌خوانیم.
+                $current = $wpdb->get_row( $wpdb->prepare(
+                    "SELECT reaction_type FROM {$reactions_table} WHERE comment_id = %d AND user_id = %d",
+                    $comment_id,
+                    $user_id
+                ), ARRAY_A );
+                $user_reaction = $current ? $current['reaction_type'] : null;
+            }
         }
 
         // بازیابی شمارش جدید اتمیک برای بازگرداندن به فرانت‌اند

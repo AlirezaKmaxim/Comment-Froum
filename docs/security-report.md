@@ -1,31 +1,35 @@
 # گزارش امنیتی افزونه MD Custom Comments
 
-**تاریخ بررسی:** ۲۰۲۶-۰۵-۲۰  
-**نسخه:** ۱.۰.۰  
+**تاریخ بررسی:** ۲۰۲۶-۰۵-۲۰
+**نسخه:** ۱.۰.۰
+**آخرین بازبینی وضعیت:** ۱۴۰۵/۰۶/۱۱ (۲۰۲۶-۰۹-۰۲) — به‌همراه `docs/improve.md`
+
+> ⚠️ **این گزارش نسبت به کد فعلی قدیمی بود** (نسخه بررسی‌شده ۱.۰.۰ بود؛ نسخه فعلی ۱.۱.۱). در بازبینی اخیر مشخص شد اکثر موارد **از قبل در کد رفع شده بودند** ولی این سند به‌روز نشده بود. وضعیت هر مورد به‌صورت جداگانه در همان بخش با یک نقل‌قول (`> **وضعیت:** ...`) علامت‌گذاری شده. برای جزئیات بیشتر و سایر یافته‌های غیرامنیتی (باگ/کارایی/بدهی فنی) به `docs/improve.md` مراجعه کنید.
 
 ---
 
 ## خلاصه
 
-| سطح | تعداد |
-|-----|-------|
-| بحرانی (Critical) | ۲ |
-| بالا (High) | ۲ |
-| متوسط (Medium) | ۳ |
-| پایین (Low) | ۴ |
+| سطح | تعداد کل | باز مانده | رفع شده |
+|-----|---------|-----------|---------|
+| بحرانی (Critical) | ۲ | ۰ | ۲ |
+| بالا (High) | ۲ | ۰ | ۲ |
+| متوسط (Medium) | ۳ | ۱ (M-2 ذاتی API است) | ۲ |
+| پایین (Low) | ۴ | ۱ (L-3) | ۳ |
 
 ---
 
 ## ⛔ بحرانی (Critical)
 
-### C-1: عدم بررسی اعتبار SSL در درخواست‌های خروجی
+### ✅ C-1 (رفع شده): عدم بررسی اعتبار SSL در درخواست‌های خروجی
+
+> **وضعیت:** **کاملاً رفع شده.** درخواست‌های تلگرام، اسلک و اکنون بله هم دیگر `sslverify => false` ندارند (پیش‌فرض `wp_remote_post` یعنی `true` در همه‌جا رعایت می‌شود). دو نقطه‌ی باقی‌مانده (`SendBale::send_request` و `test_bale_connection_ajax`) هم اصلاح شدند — این مورد به‌عنوان **B-7** هم در `docs/improve.md` ثبت شده بود.
 
 **فایل‌ها:**
-- `src/Events/Listeners/SendBale.php:56`
-- `src/Admin/Controllers/SettingsController.php:170`
-- `src/Admin/Controllers/SettingsController.php:215`
+- `src/Events/Listeners/SendBale.php` (متد `send_request`)
+- `src/Admin/Controllers/SettingsController.php` (متد `test_bale_connection_ajax`)
 
-**توضیح:** در تمام درخواست‌های خروجی به API بله و تلگرام، پارامتر `sslverify` برابر `false` تنظیم شده است. این یعنی اتصال SSL/TLS تأیید اعتبار نمی‌شود.
+**توضیح:** در درخواست‌های خروجی به API بله، پارامتر `sslverify` برابر `false` تنظیم شده است. این یعنی اتصال SSL/TLS تأیید اعتبار نمی‌شود.
 
 **خطر:** مهاجم در شبکه محلی (مثلاً شبکه وای‌فای عمومی یا هاست اشتراکی) می‌تواند حمله Man-in-the-Middle انجام داده و درخواست‌های حاوی توکن ربات را شنود یا تغییر دهد.
 
@@ -36,9 +40,11 @@
 
 ---
 
-### C-2: جعل IP از طریق هدرهای HTTP
+### ✅ C-2 (رفع شده): جعل IP از طریق هدرهای HTTP
 
-**فایل:** `src/Security/Validator.php:77-83`
+> **وضعیت:** رفع شده. `Validator::get_ip_address()` دقیقاً همان راه‌حل پیشنهادی زیر را پیاده‌سازی کرده: `HTTP_X_FORWARDED_FOR` را با `explode(',')` می‌شکند و اولین مقدار را می‌گیرد، و نتیجه نهایی را با `filter_var($ip, FILTER_VALIDATE_IP)` اعتبارسنجی می‌کند (در غیر این صورت به `REMOTE_ADDR` برمی‌گردد).
+
+**فایل:** `src/Security/Validator.php`
 
 **توضیح:** متد `get_ip_address()` مقادیر `HTTP_CLIENT_IP` و `HTTP_X_FORWARDED_FOR` را بدون هیچ اعتبارسنجی می‌پذیرد. این هدرها به راحتی توسط مهاجم جعل می‌شوند.
 
@@ -65,9 +71,11 @@ private static function get_ip_address() {
 
 ## ⚠️ بالا (High)
 
-### H-1: عدم بررسی Nonce در دریافت لیست نظرات
+### ✅ H-1 (رفع شده): عدم بررسی Nonce در دریافت لیست نظرات
 
-**فایل:** `src/Admin/Controllers/SettingsController.php:119-134`
+> **وضعیت:** رفع شده. `get_admin_comments_ajax()` هم `current_user_can('manage_options')` و هم `wp_verify_nonce($_POST['md_nonce'], 'md_comments_settings_action')` را چک می‌کند، و سمت جاوااسکریپت (`fetchComments()` در `render_settings_page`) با `fetch(ajaxurl, {method:'POST', body: formData})` و `md_nonce` در body درخواست می‌فرستد (نه GET). همین رفع، L-4 را هم پوشش می‌دهد.
+
+**فایل:** `src/Admin/Controllers/SettingsController.php`
 
 **توضیح:** متد `get_admin_comments_ajax()` تنها `current_user_can('manage_options')` را بررسی می‌کند اما توکن امنیتی (nonce) را تأیید نمی‌کند. همچنین این endpoint از متد GET استفاده می‌کند.
 
@@ -89,9 +97,11 @@ public function get_admin_comments_ajax() {
 
 ---
 
-### H-2: عدم محدودیت طول ورودی
+### ✅ H-2 (رفع شده): عدم محدودیت طول ورودی
 
-**فایل:** `src/Security/Validator.php:23-39`
+> **وضعیت:** رفع شده. `Validator::validate_comment_submission()` روی `name` با `mb_substr($name, 0, 100)` و روی `comment` با `mb_substr($comment, 0, 5000)` محدودیت طول اعمال می‌کند — دقیقاً راه‌حل پیشنهادی زیر.
+
+**فایل:** `src/Security/Validator.php`
 
 **توضیح:** فیلدهای `name` و `comment` محدودیت طول ندارند. مهاجم می‌تواند رشته‌های بسیار طولانی (مثلاً ۱ میلیون کاراکتر) ارسال کند.
 
@@ -116,9 +126,11 @@ $comment = mb_substr( $comment, 0, 5000 ); // حداکثر ۵۰۰۰ کاراکت
 
 ## ⚡ متوسط (Medium)
 
-### M-1: تابع کمکی در فضای نام عمومی
+### ✅ M-1 (رفع شده): تابع کمکی در فضای نام عمومی
 
-**فایل:** `src/Events/Listeners/SendTelegram.php:60-62`
+> **وضعیت:** رفع شده. در کد فعلی `SendTelegram.php` مستقیماً از `function_exists('as_enqueue_async_action')` استفاده می‌شود (بدون تابع کمکی جداگانه در فضای نام عمومی).
+
+**فایل:** `src/Events/Listeners/SendTelegram.php`
 
 **توضیح:** تابع `function_class_exists_as_scheduled()` در فضای نام عمومی (Global Namespace) تعریف شده است.
 
@@ -134,9 +146,11 @@ if ( function_exists( 'as_enqueue_async_action' ) ) { ... }
 
 ---
 
-### M-2: افشای توکن ربات در URL
+### M-2 (بدون تغییر — ذاتی طراحی API بله): افشای توکن ربات در URL
 
-**فایل:** `src/Events/Listeners/SendBale.php:45`
+> **وضعیت:** این مورد به‌خودی‌خود همان‌طور که خود گزارش هم اشاره کرده «روش استاندارد API بله» است و راه‌حل جایگزینی (هدر Bearer) وجود ندارد؛ عملاً باز می‌ماند. اما ریسک جانبی آن — افشای توکن در لاگ خطا (L-2) — رفع شده: در `SendBale::send_request()` قبل از لاگ کردن خطا با `str_replace($bot_token, '[REDACTED_BOT_TOKEN]', $err_msg)` توکن حذف می‌شود.
+
+**فایل:** `src/Events/Listeners/SendBale.php`
 
 **توضیح:** توکن ربات مستقیماً در URL قرار می‌گیرد:
 ```php
@@ -151,9 +165,11 @@ $url = "https://tapi.bale.ai/bot" . $bot_token . "/sendMessage";
 
 ---
 
-### M-3: استفاده از Action Scheduler وابستگی خارجی
+### ✅ M-3 (رفع شده): استفاده از Action Scheduler وابستگی خارجی
 
-**فایل:** `src/Events/Listeners/SendBale.php:32`
+> **وضعیت:** رفع شده. هر سه Listener (`SendTelegram`, `SendBale`, `SendSlack`) اگر `as_enqueue_async_action` در دسترس نباشد، با `wp_schedule_single_event()` وردپرس (بدون نیاز به Action Scheduler/ووکامرس) به‌صورت غیرهمزمان fallback می‌کنند.
+
+**فایل:** `src/Events/Listeners/SendBale.php`
 
 **توضیح:** کد فرض می‌کند `as_enqueue_async_action()` ممکن است در دسترس باشد یا نباشد. این تابع تنها در صورت نصب WooCommerce یا افزونه Action Scheduler وجود دارد.
 
@@ -165,9 +181,11 @@ $url = "https://tapi.bale.ai/bot" . $bot_token . "/sendMessage";
 
 ## 🔍 پایین (Low)
 
-### L-1: نام فیلد Honeypot قابل حدس
+### ✅ L-1 (رفع شده): نام فیلد Honeypot قابل حدس
 
-**فایل:** `src/Security/Validator.php:17`, `assets/front/front.js:117`
+> **وضعیت:** رفع شده. نام فیلد اکنون پویاست: `'md_hp_' . substr(md5($post_id . NONCE_KEY), 0, 10)` — هم در `Validator::validate_comment_submission()` و هم در `View::render()` (که مقدار را برای فرم رندر می‌کند)؛ `front.js` هم نام واقعی فیلد را از DOM می‌خواند، نه یک مقدار ثابت.
+
+**فایل:** `src/Security/Validator.php`, `assets/front/front.js`
 
 **توضیح:** نام فیلد مخفی `md_hp_website` ثابت و قابل پیش‌بینی است.
 
@@ -177,9 +195,11 @@ $url = "https://tapi.bale.ai/bot" . $bot_token . "/sendMessage";
 
 ---
 
-### L-2: `error_log()` بدون مدیریت
+### ✅ L-2 (رفع شده): `error_log()` بدون مدیریت
 
-**فایل:** `src/Events/Listeners/SendBale.php:60`
+> **وضعیت:** رفع شده. هر سه Listener از `\MDCustomComments\Core\Logger::error()` استفاده می‌کنند (نه `error_log()` مستقیم)، و پیام خطا قبل از لاگ شدن از توکن/URL وب‌هوک پاک‌سازی (redact) می‌شود.
+
+**فایل:** `src/Events/Listeners/SendBale.php`
 
 **توضیح:** خطاهای API مستقیماً با `error_log()` نوشته می‌شوند.
 
@@ -189,9 +209,11 @@ $url = "https://tapi.bale.ai/bot" . $bot_token . "/sendMessage";
 
 ---
 
-### L-3: پاکسازی کش بدون تأیید کاربر
+### 🔸 L-3 (هنوز باز): پاکسازی کش بدون تأیید کاربر
 
-**فایل:** `src/Admin/Controllers/SettingsController.php:84-96`
+> **وضعیت:** بررسی شد و هنوز باز است. کد فعلی از قبل شرط "فقط اگر کلیدهای مرتبط با ظاهر تغییر کرده باشند" را دارد (`$flush_cache` بر اساس مقایسه `$appearance_keys`) که ریسک را کمی کاهش می‌دهد، ولی همچنان بدون تایید صریح کاربر، پاک‌سازی کش چهار افزونه مختلف را انجام می‌دهد.
+
+**فایل:** `src/Admin/Controllers/SettingsController.php` (متد `save_settings_ajax`)
 
 **توضیح:** با هر بار ذخیره تنظیمات، کش چهار افزونه مختلف پاک می‌شود (W3TC, WP Super Cache, WP Rocket, LiteSpeed).
 
@@ -201,9 +223,11 @@ $url = "https://tapi.bale.ai/bot" . $bot_token . "/sendMessage";
 
 ---
 
-### L-4: عدم بررسی CSRF در متد GET نظرات (تکمیلی H-1)
+### ✅ L-4 (رفع شده): عدم بررسی CSRF در متد GET نظرات (تکمیلی H-1)
 
-**فایل:** `src/Admin/Controllers/SettingsController.php:119`
+> **وضعیت:** رفع شده — همراه با H-1 (بالا). درخواست اکنون از `fetch(ajaxurl, {method:'POST', ...})` استفاده می‌کند، نه `?action=...` روی GET.
+
+**فایل:** `src/Admin/Controllers/SettingsController.php`
 
 **توضیح:** درخواست با `fetch(ajaxurl + '?action=md_get_admin_comments')` از متد GET استفاده می‌کند.
 
@@ -228,21 +252,23 @@ $url = "https://tapi.bale.ai/bot" . $bot_token . "/sendMessage";
 
 ---
 
-## اولویت‌بندی رفع مشکلات
+## اولویت‌بندی رفع مشکلات (به‌روزشده — ۱۴۰۵/۰۶/۱۱)
 
-### فوری (باید رفع شود)
-1. **C-1** — غیرفعال کردن `sslverify => false` در محیط تولید
-2. **C-2** — اصلاح متد `get_ip_address()` با `FILTER_VALIDATE_IP`
+### هنوز باز — باید رفع شود
+1. **L-3** — پاک‌سازی هوشمندتر کش (فقط با تایید صریح کاربر یا محدودتر کردن شرط فعلی)
 
-### مهم (توصیه می‌شود رفع شود)
-3. **H-1** — افزودن nonce به `get_admin_comments_ajax()`
-4. **H-2** — افزودن محدودیت طول به `name` و `comment`
+### رفع شده (تایید شده در بازبینی فعلی)
+- ~~C-1 (کامل — تلگرام/اسلک/بله)~~ — `sslverify` دیگر هیچ‌جا `false` ست نمی‌شود، پیش‌فرض `true` رعایت می‌شود
+- ~~C-2~~ — `get_ip_address()` با `FILTER_VALIDATE_IP`
+- ~~H-1~~ — nonce در `get_admin_comments_ajax()`
+- ~~H-2~~ — محدودیت طول `name`/`comment` با `mb_substr`
+- ~~M-1~~ — حذف تابع کمکی global، استفاده مستقیم از `function_exists`
+- ~~M-3~~ — fallback با `wp_schedule_single_event()`
+- ~~L-1~~ — نام پویای فیلد Honeypot
+- ~~L-2~~ — استفاده از `Logger::error()` + redact کردن توکن
+- ~~L-4~~ — تغییر GET به POST (همراه با H-1)
 
-### فرعی (رفع در نسخه‌های بعدی)
-5. **M-1** — حذف تابع `function_class_exists_as_scheduled`
-6. **M-2** — مستندسازی درباره لاگ‌های سرور
-7. **M-3** — استفاده از Cron وردپرس به جای Action Scheduler
-8. **L-1** — پویا کردن نام فیلد Honeypot
-9. **L-2** — استفاده از Logger به جای `error_log()`
-10. **L-3** — پاک‌سازی هوشمند کش
-11. **L-4** — تغییر GET به POST برای نظرات
+### باقی‌مانده ذاتی (غیرقابل‌رفع کامل)
+- **M-2** — افشای توکن در URL بله؛ محدودیت API خود بله است (ریسک جانبی لاگ سرور با L-2 کاهش یافته)
+
+> برای باگ‌های فانکشنال، گلوگاه‌های کارایی و بدهی فنی (خارج از حوزه امنیت) به `docs/improve.md` مراجعه کنید.

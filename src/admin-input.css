@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+/* توکن‌های رنگ پنل ادمین — باید با تنظیمات JS که قبلاً در Admin/Assets.php inline بود هماهنگ بماند */
+@theme {
+  --color-primary: #0c2d28;
+  --color-gold: #c39854;
+  --color-teal: #009c8f;
+  --color-neutral: #606060;
+  --color-border: #d9d9d9;
+  --color-subtle: #e0e0e0;
+
+  --font-peyda: Peyda, IRANSansX, Tahoma, sans-serif;
+}

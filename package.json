@@ -5,7 +5,9 @@
   "main": "tailwind.config.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tailwindcss -i src/input.css -o assets/front/front.css",
+    "build": "npm run build:front && npm run build:admin",
+    "build:front": "tailwindcss -i src/input.css -o assets/front/front.css",
+    "build:admin": "tailwindcss -i src/admin-input.css -o assets/admin/admin-tailwind.css",
     "dev": "tailwindcss -i src/input.css -o assets/front/front.css --watch"
   },
   "keywords": [],

@@ -32,14 +32,18 @@ md-custom-comments/
 │   │   └── Assets.php               # لود شرطی CSS/JS فرانت
 │   ├── Admin/
 │   │   ├── Assets.php               # لود شرطی CSS/JS ادمین
-│   │   └── Controllers/
-│   │       └── SettingsController.php  # صفحه تنظیمات + مدیریت نظرات
+│   │   ├── Controllers/
+│   │   │   └── SettingsController.php  # منطق AJAX + آماده‌سازی متغیرها (بدون HTML)
+│   │   └── Views/
+│   │       └── settings-page.php    # قالب HTML/Alpine.js صفحه تنظیمات (include شده)
 │   ├── Database/
 │   │   └── CommentRepository.php    # تمام کوئری‌های دیتابیس
 │   ├── Security/
 │   │   └── Validator.php            # اعتبارسنجی ورودی (Zero-Trust)
+│   ├── Support/
+│   │   ├── AvatarRenderer.php       # منطق مشترک رندر آواتار (فرانت + ادمین)
+│   │   └── PersianFormatter.php     # اعداد فارسی + تاریخ نسبی فارسی (فرانت + ادمین)
 │   └── Events/
-│       ├── EventDispatcher.php      # لایه انتزاعی do_action/apply_filters
 │       └── Listeners/
 │           ├── SendTelegram.php     # ارسال وب‌هوک تلگرام
 │           ├── SendBale.php         # ارسال پیام به بله
@@ -112,7 +116,7 @@ Controller::handle_submit()
 Validator::validate_comment_submission()
   ├── بررسی Nonce
   ├── بررسی Honeypot
-  ├── sanitize_text_field / wp_kses_post
+  ├── sanitize_text_field / sanitize_textarea_field (+ wp_unslash) + محدودیت طول
   ├── Regex شماره موبایل ایران
   └── تعیین وضعیت (approved/hold)
        ↓
@@ -123,7 +127,8 @@ do_action('md_comment_inserted', $comment_id, $data)
        ↓
 Plugin::dispatch_comment_events()
   ├── SendTelegram::dispatch()
-  └── SendBale::dispatch()
+  ├── SendBale::dispatch()
+  └── SendSlack::dispatch()
        ↓
 wp_send_json_success() → front.js آپند کامنت به DOM
 ```
@@ -173,7 +178,7 @@ Admin/SettingsController.php
   └── AJAX: md_save_settings, md_get_admin_comments, md_change_comment_status,
   │         md_delete_comment, md_reply_comment, md_edit_comment, md_test_bale
   └── هوک: admin_menu, admin_init, admin_bar_menu
-  └── رندر: render_settings_page() — HTML با Alpine.js + Tailwind
+  └── رندر: render_settings_page() → include Admin/Views/settings-page.php (HTML با Alpine.js + Tailwind)
 
 Database/CommentRepository.php
   └── وابسته به: $wpdb (تنها کلاسی که با دیتابیس صحبت می‌کند)
@@ -230,6 +235,7 @@ Events/Listeners/SendSlack.php
 | `md_comment_inserted` | `CommentRepository::insert()` | `Plugin::dispatch_comment_events()` | پس از ثبت نظر در دیتابیس |
 | `md_send_telegram_webhook_async` | `SendTelegram::dispatch()` | `Plugin::handle_telegram_async()` | ارسال ناهمزمان وب‌هوک تلگرام |
 | `md_send_bale_async` | `SendBale::dispatch()` | `Plugin::handle_bale_async()` | ارسال ناهمزمان پیام بله |
+| `md_send_slack_webhook_async` | `SendSlack::dispatch()` | `Plugin::handle_slack_async()` | ارسال ناهمزمان وب‌هوک اسلک |
 
 برای افزودن پیام‌رسان جدید:
 1. فایل listener جدید در `src/Events/Listeners/` بسازید
@@ -249,7 +255,7 @@ Events/Listeners/SendSlack.php
 
 ### افزودن تنظیم جدید به ادمین
 1. مقدار پیش‌فرض را در `Installer::set_default_options()` اضافه کنید
-2. فیلد HTML را در `SettingsController::render_settings_page()` اضافه کنید
+2. فیلد HTML را در `src/Admin/Views/settings-page.php` اضافه کنید (متغیر لازم را قبلش در `SettingsController::render_settings_page()` تعریف کنید)
 3. ذخیره‌سازی را در `SettingsController::save_settings_ajax()` اضافه کنید
 4. مقدار را در View.php با `get_option('md_comments_settings')` بخوانید
 

@@ -17,32 +17,18 @@ class Assets {
         // فعال‌سازی کتابخانه رسانه وردپرس
         wp_enqueue_media();
 
-        // لود Tailwind CSS و Alpine.js به صورت محلی برای پنل مدیریت مدرن
-        wp_enqueue_script(
+        // استایل از پیش کامپایل‌شده Tailwind برای پنل ادمین (به‌جای کامپایلر Runtime حجیم
+        // که کلاس‌ها را در لحظه‌ی بارگذاری صفحه در مرورگر تولید می‌کرد). برای بازسازی این فایل
+        // پس از تغییر کلاس‌های Tailwind در src/Admin/Views/settings-page.php دستور
+        // `npm run build:admin` (یا `npm run build`) را اجرا کنید.
+        wp_enqueue_style(
             'md-comments-admin-tailwind',
-            plugins_url( 'assets/admin/tailwind.min.js', MD_CUSTOM_COMMENTS_FILE ),
+            plugins_url( 'assets/admin/admin-tailwind.css', MD_CUSTOM_COMMENTS_FILE ),
             [],
             MD_CUSTOM_COMMENTS_VERSION
         );
-        
-        // تنظیمات دلخواه Tailwind در ادمین
-        wp_add_inline_script( 'md-comments-admin-tailwind', "
-            tailwind.config = {
-                theme: {
-                    extend: {
-                        colors: {
-                            primary: '#0c2d28',
-                            gold: '#c39854',
-                            teal: '#009c8f',
-                            neutral: '#606060',
-                            border: '#d9d9d9',
-                            subtle: '#e0e0e0',
-                        }
-                    }
-                }
-            }
-        " );
 
+        // Alpine.js به صورت محلی برای تعاملات پنل مدیریت
         wp_enqueue_script(
             'md-comments-admin-alpine',
             plugins_url( 'assets/admin/alpine.min.js', MD_CUSTOM_COMMENTS_FILE ),

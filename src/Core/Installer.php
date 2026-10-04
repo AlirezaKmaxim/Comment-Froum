@@ -40,7 +40,8 @@ class Installer {
             reaction_type varchar(10) NOT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
-            KEY comment_id (comment_id)
+            KEY comment_id (comment_id),
+            UNIQUE KEY comment_user (comment_id,user_id)
         ) $charset_collate;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -74,6 +75,24 @@ class Installer {
         ) );
         if ( ! $dislikes_check ) {
             $wpdb->query( "ALTER TABLE $table_name ADD COLUMN dislikes int(11) NOT NULL DEFAULT 0 AFTER likes" );
+        }
+
+        // اطمینان از وجود قید یکتایی (comment_id, user_id) روی جدول واکنش‌ها برای نصب‌های قدیمی‌تر.
+        // این قید از ثبت چند واکنش هم‌زمان توسط یک کاربر روی یک دیدگاه (Race Condition) جلوگیری می‌کند.
+        $unique_check = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = 'comment_user'",
+            DB_NAME,
+            $reactions_table
+        ) );
+        if ( ! $unique_check ) {
+            // قبل از افزودن قید یکتایی، رکوردهای تکراری احتمالی (باقی‌مانده از race condition قبلی)
+            // را حذف می‌کنیم تا ALTER TABLE با خطای duplicate entry مواجه نشود.
+            $wpdb->query(
+                "DELETE r1 FROM {$reactions_table} r1
+                 INNER JOIN {$reactions_table} r2
+                 ON r1.comment_id = r2.comment_id AND r1.user_id = r2.user_id AND r1.id > r2.id"
+            );
+            $wpdb->query( "ALTER TABLE {$reactions_table} ADD UNIQUE KEY comment_user (comment_id,user_id)" );
         }
 
         // ثبت تنظیمات پیش‌فرض

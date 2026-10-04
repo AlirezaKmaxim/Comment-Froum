@@ -194,13 +194,17 @@ function initMdComments() {
                   // Create element from HTML string and append
                   const parser = new DOMParser();
                   const doc = parser.parseFromString(data.html, 'text/html');
-                  const newCommentNode = doc.body.firstChild;
-                  
-                  commentsList.appendChild(newCommentNode);
-                  newCommentNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  // Use firstElementChild (not firstChild) to skip whitespace text nodes
+                  // that precede the actual <div> in the server-rendered HTML.
+                  const newCommentNode = doc.body.querySelector('.user-comment') || doc.body.firstElementChild;
 
-                  // Bind reaction listeners to new comment
-                  initReactions();
+                  if (newCommentNode) {
+                    commentsList.appendChild(newCommentNode);
+                    newCommentNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                    // Bind reaction listeners to new comment
+                    initReactions();
+                  }
                 }
               }
               resetForm();
@@ -265,6 +269,64 @@ function initMdComments() {
       selectedRating = 0;
       if (selectedRatingInput) selectedRatingInput.value = '0';
       clearStars();
+    }
+
+    // ─── Load More Comments (Lazy Load) ───
+    const loadMoreBtn = document.getElementById('loadMoreCommentsBtn');
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener('click', () => {
+        const container = document.getElementById('mdCommentsContainer');
+        const ajaxUrl = container ? container.dataset.ajaxUrl : (window.mdCommentsData ? window.mdCommentsData.ajaxUrl : '/wp-admin/admin-ajax.php');
+        const nonce = container ? container.dataset.nonce : (window.mdCommentsData ? window.mdCommentsData.nonce : '');
+        const postId = container ? container.dataset.postId : (window.mdCommentsData ? window.mdCommentsData.postId : 0);
+        const nextPage = loadMoreBtn.dataset.nextPage || '2';
+
+        loadMoreBtn.disabled = true;
+        loadMoreBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+        const formData = new FormData();
+        formData.append('action', 'md_load_more_comments');
+        formData.append('post_id', postId);
+        formData.append('page', nextPage);
+        if (nonce) {
+          formData.append('_ajax_nonce', nonce);
+        }
+
+        fetch(ajaxUrl, {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => response.json())
+        .then(res => {
+          loadMoreBtn.disabled = false;
+          loadMoreBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+
+          if (res.success) {
+            const commentsList = document.getElementById('commentsList');
+            if (commentsList && res.data.html) {
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(res.data.html, 'text/html');
+              // .children فقط المنت‌ها را برمی‌گرداند (نه Text Node های فاصله خالی بین آن‌ها)
+              Array.from(doc.body.children).forEach(node => commentsList.appendChild(node));
+              initReactions();
+            }
+
+            if (res.data.has_more) {
+              loadMoreBtn.dataset.nextPage = res.data.next_page;
+            } else {
+              loadMoreBtn.remove();
+            }
+          } else {
+            showToast(res.data || 'خطا در بارگذاری دیدگاه‌های بیشتر');
+          }
+        })
+        .catch(err => {
+          loadMoreBtn.disabled = false;
+          loadMoreBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+          showToast('خطا در ارتباط با سرور');
+          console.error(err);
+        });
+      });
     }
 
     // ─── Comment Reactions ───

@@ -24,14 +24,14 @@ class Validator {
         }
 
         // ۳. بررسی و فیلتر کردن فیلد نام
-        $name = isset( $_POST['name'] ) ? sanitize_text_field( $_POST['name'] ) : '';
+        $name = isset( $_POST['name'] ) ? sanitize_text_field( wp_unslash( $_POST['name'] ) ) : '';
         $name = mb_substr( $name, 0, 100 ); // حداکثر ۱۰۰ کاراکتر
         if ( empty( $name ) ) {
             wp_send_json_error( 'لطفاً نام و نام خانوادگی خود را وارد کنید.' );
         }
 
         // ۴. اعتبارسنجی و فیلتر شماره موبایل ایران (Regex)
-        $phone = isset( $_POST['phone'] ) ? sanitize_text_field( $_POST['phone'] ) : '';
+        $phone = isset( $_POST['phone'] ) ? sanitize_text_field( wp_unslash( $_POST['phone'] ) ) : '';
         if ( ! empty( $phone ) ) {
             if ( ! preg_match( '/^09[0-9]{9}$/', $phone ) ) {
                 wp_send_json_error( 'شماره همراه وارد شده نامعتبر است. نمونه صحیح: 09123456789' );
@@ -39,7 +39,7 @@ class Validator {
         }
 
         // ۵. فیلتر کردن متن نظر
-        $comment = isset( $_POST['comment'] ) ? sanitize_textarea_field( $_POST['comment'] ) : '';
+        $comment = isset( $_POST['comment'] ) ? sanitize_textarea_field( wp_unslash( $_POST['comment'] ) ) : '';
         $comment = mb_substr( $comment, 0, 5000 ); // حداکثر ۵۰۰۰ کاراکتر
         if ( empty( $comment ) ) {
             wp_send_json_error( 'لطفاً متن دیدگاه خود را وارد کنید.' );

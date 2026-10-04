@@ -58,7 +58,6 @@ class SendBale {
                 'parse_mode' => 'Markdown'
             ], JSON_UNESCAPED_UNICODE ),
             'timeout'   => 10,
-            'sslverify' => false,
         ] );
 
         if ( is_wp_error( $response ) ) {

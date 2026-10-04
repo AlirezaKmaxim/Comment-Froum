@@ -101,4 +101,4 @@ wp_remote_post() → https://tapi.bale.ai/bot{token}/sendMessage
 - توکن ربات و شناسه چت در دیتابیس وردپرس (`wp_options`) ذخیره می‌شوند
 - تمام درخواست‌های AJAX به بله نیاز به توکن امنیتی (nonce) و دسترسی `manage_options` دارند
 - مقدار `chat_id` نباید با علامت `@` شروع شود (اعتبارسنجی سمت سرور)
-- در محیط تولید (Production)، توصیه می‌شود `sslverify` را به `true` تغییر دهید
+- ~~در محیط تولید (Production)، توصیه می‌شود `sslverify` را به `true` تغییر دهید~~ رفع شد — دیگر `sslverify => false` در درخواست‌های بله ست نمی‌شود (مقدار پیش‌فرض `wp_remote_post` یعنی `true` رعایت می‌شود، هماهنگ با تلگرام/اسلک)
